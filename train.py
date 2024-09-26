@@ -241,6 +241,19 @@ def get_lr(it):
     coeff = 0.5 * (1.0 + math.cos(math.pi * decay_ratio)) # coeff ranges 0..1
     return min_lr + coeff * (learning_rate - min_lr)
 
+def export_model_structure(model, input_sample, output_path):
+    # 导出模型
+    torch.onnx.export(model,               # model being run
+                      input_sample,        # model input (or a tuple for multiple inputs)
+                      output_path,         # where to save the model (can be a file or file-like object)
+                      export_params=True,  # store the trained parameter weights inside the model file
+                      opset_version=14,    # the ONNX version to export the model to
+                      do_constant_folding=True,  # whether to execute constant folding for optimization
+                      input_names = ['input'],   # the model's input names
+                      output_names = ['output'], # the model's output names
+                      dynamic_axes={'input' : {0 : 'batch_size'},    # variable length axes
+                                    'output' : {0 : 'batch_size'}})
+
 # logging
 if wandb_log and master_process:
     import wandb
@@ -284,6 +297,14 @@ while True:
                 }
                 print(f"saving checkpoint to {out_dir}")
                 torch.save(checkpoint, os.path.join(out_dir, 'ckpt.pt'))
+                torch.save(model, os.path.join(out_dir, 'model_ckpt.pt'))
+
+                # 获取一个输入样本
+                X, _ = get_batch('train')
+
+                # 导出模型的网络结构图
+                export_model_structure(model, X, os.path.join(out_dir, 'model.onnx'))
+
     if iter_num == 0 and eval_only:
         break
 
