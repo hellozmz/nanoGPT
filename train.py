@@ -268,6 +268,17 @@ t0 = time.time()
 local_iter_num = 0 # number of iterations in the lifetime of this process
 raw_model = model.module if ddp else model # unwrap DDP container if needed
 running_mfu = -1.0
+
+if use_profiler:
+    prof = torch.profiler.profile(
+            # schedule=torch.profiler.schedule(wait=2, warmup=2, active=6, repeat=1),
+            schedule=torch.profiler.schedule(wait=1, warmup=1, active=2, repeat=1),
+            on_trace_ready=torch.profiler.tensorboard_trace_handler('./logdir'),
+            record_shapes=True,
+            with_stack=True
+        )
+    prof.start()
+
 while True:
 
     # determine and set the learning rate for this iteration
@@ -321,21 +332,8 @@ while True:
             # looking at the source of that context manager, it just toggles this variable
             model.require_backward_grad_sync = (micro_step == gradient_accumulation_steps - 1)
         with ctx:
-            if use_profiler:
-                print("Using PyTorch Profiler")
-                with torch.profiler.profile(
-                    # schedule=torch.profiler.schedule(wait=2, warmup=2, active=6, repeat=1),
-                    schedule=torch.profiler.schedule(wait=0, warmup=0, active=2, repeat=1),
-                    on_trace_ready=torch.profiler.tensorboard_trace_handler('./logdir'),
-                    record_shapes=True,
-                    with_stack=True
-                ) as profiler:
-                    # 在这里运行你的模型
-                    logits, loss = model(X, Y)
-                    profiler.step()  # 调用 profiler.step() 来结束当前步骤的记录
-            else:
-                logits, loss = model(X, Y)
-                loss = loss / gradient_accumulation_steps # scale the loss to account for gradient accumulation
+            logits, loss = model(X, Y)
+            loss = loss / gradient_accumulation_steps # scale the loss to account for gradient accumulation
         # immediately async prefetch next batch while model is doing the forward pass on the GPU
         X, Y = get_batch('train')
         # backward pass, with gradient scaling if training in fp16
@@ -349,6 +347,9 @@ while True:
     scaler.update()
     # flush the gradients as soon as we can, no need for this memory anymore
     optimizer.zero_grad(set_to_none=True)
+
+    if use_profiler:
+        prof.step()
 
     # timing and logging
     t1 = time.time()
@@ -368,6 +369,9 @@ while True:
     # termination conditions
     if iter_num > max_iters:
         break
+
+if use_profiler:
+    prof.stop()
 
 if ddp:
     destroy_process_group()
