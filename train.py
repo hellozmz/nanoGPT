@@ -28,6 +28,7 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.distributed import init_process_group, destroy_process_group
 
 from model import GPTConfig, GPT
+import torch.profiler
 
 # -----------------------------------------------------------------------------
 # default config values designed to train a gpt2 (124M) on OpenWebText
@@ -68,6 +69,7 @@ lr_decay_iters = 600000 # should be ~= max_iters per Chinchilla
 min_lr = 6e-5 # minimum learning rate, should be ~= learning_rate/10 per Chinchilla
 # DDP settings
 backend = 'nccl' # 'nccl', 'gloo', etc.
+use_profiler = False # whether to use the PyTorch profiler
 # system
 device = 'cuda' # examples: 'cpu', 'cuda', 'cuda:0', 'cuda:1' etc., or try 'mps' on macbooks
 dtype = 'bfloat16' if torch.cuda.is_available() and torch.cuda.is_bf16_supported() else 'float16' # 'float32', 'bfloat16', or 'float16', the latter will auto implement a GradScaler
@@ -154,6 +156,7 @@ if init_from == 'scratch':
         print("defaulting to vocab_size of GPT-2 to 50304 (50257 rounded up for efficiency)")
     model_args['vocab_size'] = meta_vocab_size if meta_vocab_size is not None else 50304
     gptconf = GPTConfig(**model_args)
+    print(f"model config: {gptconf}")
     model = GPT(gptconf)
 elif init_from == 'resume':
     print(f"Resuming training from {out_dir}")
@@ -318,8 +321,21 @@ while True:
             # looking at the source of that context manager, it just toggles this variable
             model.require_backward_grad_sync = (micro_step == gradient_accumulation_steps - 1)
         with ctx:
-            logits, loss = model(X, Y)
-            loss = loss / gradient_accumulation_steps # scale the loss to account for gradient accumulation
+            if use_profiler:
+                print("Using PyTorch Profiler")
+                with torch.profiler.profile(
+                    # schedule=torch.profiler.schedule(wait=2, warmup=2, active=6, repeat=1),
+                    schedule=torch.profiler.schedule(wait=0, warmup=0, active=2, repeat=1),
+                    on_trace_ready=torch.profiler.tensorboard_trace_handler('./logdir'),
+                    record_shapes=True,
+                    with_stack=True
+                ) as profiler:
+                    # 在这里运行你的模型
+                    logits, loss = model(X, Y)
+                    profiler.step()  # 调用 profiler.step() 来结束当前步骤的记录
+            else:
+                logits, loss = model(X, Y)
+                loss = loss / gradient_accumulation_steps # scale the loss to account for gradient accumulation
         # immediately async prefetch next batch while model is doing the forward pass on the GPU
         X, Y = get_batch('train')
         # backward pass, with gradient scaling if training in fp16
