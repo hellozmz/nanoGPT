@@ -311,13 +311,7 @@ while True:
                 }
                 print(f"saving checkpoint to {out_dir}")
                 torch.save(checkpoint, os.path.join(out_dir, 'ckpt.pt'))
-                torch.save(model, os.path.join(out_dir, 'model_ckpt.pt'))
-
-                # 获取一个输入样本
-                X, _ = get_batch('train')
-
-                # 导出模型的网络结构图
-                export_model_structure(model, X, os.path.join(out_dir, 'model.onnx'))
+                # torch.save(model, os.path.join(out_dir, 'model_ckpt.pt'))
 
     if iter_num == 0 and eval_only:
         break
@@ -370,8 +364,17 @@ while True:
     if iter_num > max_iters:
         break
 
+def save_model():
+    # 获取一个输入样本
+    X, _ = get_batch('train')
+
+    # 导出模型的网络结构图
+    export_model_structure(model, X, os.path.join(out_dir, 'model.onnx'))
+
 if use_profiler:
     prof.stop()
+
+save_model()
 
 if ddp:
     destroy_process_group()
