@@ -269,11 +269,13 @@ local_iter_num = 0 # number of iterations in the lifetime of this process
 raw_model = model.module if ddp else model # unwrap DDP container if needed
 running_mfu = -1.0
 
+
 if use_profiler:
+    profiler_path = f"./logdir/dis_{ddp_rank}" if ddp else "./logdir"
     prof = torch.profiler.profile(
             # schedule=torch.profiler.schedule(wait=2, warmup=2, active=6, repeat=1),
             schedule=torch.profiler.schedule(wait=1, warmup=1, active=2, repeat=1),
-            on_trace_ready=torch.profiler.tensorboard_trace_handler('./logdir'),
+            on_trace_ready=torch.profiler.tensorboard_trace_handler(profiler_path),
             record_shapes=True,
             with_stack=True
         )
