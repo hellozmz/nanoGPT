@@ -35,3 +35,8 @@ warmup_iters = 100 # not super necessary potentially
 # on macbook also add
 # device = 'cpu'  # run on cpu only
 # compile = False # do not torch compile the model
+
+# moe settings
+use_moe = False
+num_experts = 4
+num_experts_per_tok = 2

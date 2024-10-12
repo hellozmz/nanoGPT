@@ -91,6 +91,35 @@ class MLP(nn.Module):
         x = self.dropout(x)
         return x
 
+class MoE(nn.Module):
+    def __init__(
+        self,
+        config,
+    ):
+        super().__init__()
+        self.experts = nn.ModuleList([MLP(config)
+                                     for i in range(config.num_experts)])
+        self.gate = nn.Linear(config.n_embd, config.num_experts, bias=False)
+        self.num_experts_per_tok = config.num_experts_per_tok
+
+    def forward(self, x):
+        orig_shape = x.shape
+        x = x.view(-1, x.shape[-1])
+
+        scores = self.gate(x)
+        expert_weights, expert_indices = torch.topk(
+            scores, self.num_experts_per_tok, dim=-1)
+        expert_weights = expert_weights.softmax(dim=-1)
+        flat_expert_indices = expert_indices.view(-1)
+
+        x = x.repeat_interleave(self.num_experts_per_tok, dim=0)
+        y = torch.empty_like(x, dtype=x.dtype, device=x.device)
+        for i, expert in enumerate(self.experts):
+            y[flat_expert_indices == i] = expert(x[flat_expert_indices == i])
+        y = (y.view(*expert_weights.shape, -1) *
+             expert_weights.unsqueeze(-1)).sum(dim=1)
+        return y.view(*orig_shape)
+
 class Block(nn.Module):
 
     def __init__(self, config):
@@ -98,11 +127,17 @@ class Block(nn.Module):
         self.ln_1 = LayerNorm(config.n_embd, bias=config.bias)
         self.attn = CausalSelfAttention(config)
         self.ln_2 = LayerNorm(config.n_embd, bias=config.bias)
-        self.mlp = MLP(config)
+        # self.mlp = MLP(config)
+        if config.use_moe:
+            print("using mixture of experts")
+            self.ff = MoE(config)
+        else:
+            print("using regular MLP")
+            self.ff = MLP(config)
 
     def forward(self, x):
         x = x + self.attn(self.ln_1(x))
-        x = x + self.mlp(self.ln_2(x))
+        x = self.ff(self.ln_2(x))
         return x
 
 @dataclass
@@ -114,6 +149,10 @@ class GPTConfig:
     n_embd: int = 768
     dropout: float = 0.0
     bias: bool = True # True: bias in Linears and LayerNorms, like GPT-2. False: a bit better and faster
+    # moe config
+    use_moe: bool = False
+    num_experts: int = 8
+    num_experts_per_tok: int = 2
 
 class GPT(nn.Module):
 
