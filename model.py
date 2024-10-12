@@ -103,22 +103,22 @@ class MoE(nn.Module):
         self.num_experts_per_tok = config.num_experts_per_tok
 
     def forward(self, x):
-        orig_shape = x.shape
-        x = x.view(-1, x.shape[-1])
+        orig_shape = x.shape    # [B, T, E]
+        x = x.view(-1, x.shape[-1]) # [B*T, E]
 
-        scores = self.gate(x)
+        scores = self.gate(x)   # [B*T, num_experts]
         expert_weights, expert_indices = torch.topk(
-            scores, self.num_experts_per_tok, dim=-1)
+            scores, self.num_experts_per_tok, dim=-1)   # [B*T, num_experts_per_tok], [B*T, num_experts_per_tok]
         expert_weights = expert_weights.softmax(dim=-1)
-        flat_expert_indices = expert_indices.view(-1)
+        flat_expert_indices = expert_indices.view(-1)   # [B*T*num_experts_per_tok]
 
-        x = x.repeat_interleave(self.num_experts_per_tok, dim=0)
-        y = torch.empty_like(x, dtype=x.dtype, device=x.device)
+        x = x.repeat_interleave(self.num_experts_per_tok, dim=0)    # [B*T*num_experts_per_tok, E]
+        y = torch.empty_like(x, dtype=x.dtype, device=x.device)     # [B*T*num_experts_per_tok, E]
         for i, expert in enumerate(self.experts):
             y[flat_expert_indices == i] = expert(x[flat_expert_indices == i])
         y = (y.view(*expert_weights.shape, -1) *
-             expert_weights.unsqueeze(-1)).sum(dim=1)
-        return y.view(*orig_shape)
+             expert_weights.unsqueeze(-1)).sum(dim=1)   # [B*T, E]
+        return y.view(*orig_shape)      # [B, T, E]
 
 class Block(nn.Module):
 
@@ -281,7 +281,7 @@ class GPT(nn.Module):
         sd_keys_hf = sd_hf.keys()
         sd_keys_hf = [k for k in sd_keys_hf if not k.endswith('.attn.masked_bias')] # ignore these, just a buffer
         sd_keys_hf = [k for k in sd_keys_hf if not k.endswith('.attn.bias')] # same, just the mask (buffer)
-        transposed = ['attn.c_attn.weight', 'attn.c_proj.weight', 'mlp.c_fc.weight', 'mlp.c_proj.weight']
+        transposed = ['attn.c_attn.weight', 'attn.c_proj.weight', 'ff.c_fc.weight', 'ff.c_proj.weight']
         # basically the openai checkpoints use a "Conv1D" module, but we only want to use a vanilla Linear
         # this means that we have to transpose these weights when we import them
         assert len(sd_keys_hf) == len(sd_keys), f"mismatched keys: {len(sd_keys_hf)} != {len(sd_keys)}"
