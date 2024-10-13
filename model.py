@@ -113,7 +113,8 @@ class MoE(nn.Module):
         flat_expert_indices = expert_indices.view(-1)   # [B*T*num_experts_per_tok]
 
         x = x.repeat_interleave(self.num_experts_per_tok, dim=0)    # [B*T*num_experts_per_tok, E]
-        y = torch.empty_like(x, dtype=x.dtype, device=x.device)     # [B*T*num_experts_per_tok, E]
+        dtype = torch.bfloat16 if torch.cuda.is_available() and torch.cuda.is_bf16_supported() else x.dtype
+        y = torch.empty_like(x, dtype=dtype, device=x.device)     # [B*T*num_experts_per_tok, E]
         for i, expert in enumerate(self.experts):
             y[flat_expert_indices == i] = expert(x[flat_expert_indices == i])
         y = (y.view(*expert_weights.shape, -1) *
