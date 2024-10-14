@@ -116,7 +116,7 @@ class MoE(nn.Module):
         dtype = torch.bfloat16 if torch.cuda.is_available() and torch.cuda.is_bf16_supported() else x.dtype
         y = torch.empty_like(x, dtype=dtype, device=x.device)     # [B*T*num_experts_per_tok, E]
         for i, expert in enumerate(self.experts):
-            y[flat_expert_indices == i] = expert(x[flat_expert_indices == i])
+            y[flat_expert_indices == i] = expert(x[flat_expert_indices == i]).to(y.dtype)
         y = (y.view(*expert_weights.shape, -1) *
              expert_weights.unsqueeze(-1)).sum(dim=1)   # [B*T, E]
         return y.view(*orig_shape)      # [B, T, E]
