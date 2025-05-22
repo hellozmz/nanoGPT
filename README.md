@@ -231,9 +231,22 @@ All nanoGPT experiments are powered by GPUs on [Lambda labs](https://lambdalabs.
 
 ## cpu
 
+### data
+python prepare.py
+
 ### train
 python train.py config/train_xiyou.py --device=cpu --compile=False --eval_iters=20 --log_interval=1 --block_size=64 --batch_size=12 --n_layer=4 --n_head=4 --n_embd=128 --max_iters=200 --lr_decay_iters=2000 --dropout=0.0 --use_moe=True --eval_interval=20
 
 ## eval
 python sample.py --out_dir=out-xiyou --device=cpu --start="谁是唐僧？"
 
+## gpu
+
+### data
+python prepare.py
+
+### train
+torchrun --standalone --nproc_per_node=8 train.py config/train_xiyou.py --compile=False --eval_iters=2 --log_interval=10 --block_size=64 --batch_size=12 --n_layer=4 --n_head=4 --n_embd=128 --max_iters=4000 --lr_decay_iters=2000 --dropout=0.0 --eval_interval=100 --use_moe=True --gradient_accumulation_steps=128 2>&1 | tee test.log
+
+### eval
+python sample.py --out_dir=out-xiyou --device=cuda --start="谁是唐僧？"
